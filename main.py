@@ -10,6 +10,11 @@ API_TOKEN = '6219528902:AAF7a-Yrg3yw25EaV4xBXCNXy3nltSDR0Fo'
 
 bot = telebot.TeleBot(API_TOKEN, state_storage=state_storage)
 
+# TODO на старте удалять пользователя полностью, если он есть
+# TODO сделать проверку на корректность ввода
+# TODO сделать вывод результата как ему надо
+# TODO либо подсветку кнопок, либо то, что он выбрал
+# TODO расставить комментарии и оюъяснить реюяьвфытлвтфыэзофТВД, ЙОЫВЬохМЫВдМОЫВ М ЫБ л=-
 
 class UserStates(StatesGroup):
     body_mass = State()
@@ -19,7 +24,8 @@ class UserStates(StatesGroup):
     heart_rate = State()  # Изменение частоты сердечных сокращений
     respiratory_rate = State()  # Изменение частоты дыхательных движений
     diuresis = State()  # Диурез
-    end = State()  # Окончание работы
+    first_scale_end = State()  # Окончание работы
+    second_scale_end = State()  # Окончание работы
 
 
 class UserData:
@@ -67,14 +73,14 @@ FIRST_SCALE_STATES = ((UserStates.body_mass, 'Введите массу тела
                       (UserStates.heart_rate, 'Изменение частоты сердечных сокращений(ЧСС)\n\nИли по копке можете вернуться в главное меню', heart_rate_buttons_keyboard),
                       (UserStates.respiratory_rate, 'Изменение частоты дыхательных движений(ЧДД)\n\nИли по копке можете вернуться в главное меню', respiratory_rate_keyboard),
                       (UserStates.diuresis, 'Диурез (мл/ч)\n\nИли по копке можете вернуться в главное меню', diuresis_keyboard),
-                      (UserStates.end, 'Результат', None))
+                      (UserStates.first_scale_end, '', None))
 
 SECOND_SCALE_STATES = ((UserStates.body_mass, 'Введите массу тела пациентки по примеру: 60.5', None),
                       (UserStates.body_height, 'Введите рост пациентки по примеру: 178', None),
                       (UserStates.systolic_blood_pressure, 'Изменение систоличесокго артериального давления (САД)\n\nИли по копке можете вернуться в главное меню', systolic_blood_pressure_keyboard),
                       (UserStates.heart_rate, 'Изменение частоты сердечных сокращений(ЧСС)\n\nИли по копке можете вернуться в главное меню', heart_rate_buttons_keyboard),
                       (UserStates.respiratory_rate, 'Изменение частоты дыхательных движений(ЧДД)\n\nИли по копке можете вернуться в главное меню', respiratory_rate_keyboard),
-                      (UserStates.end, 'Результат', None))
+                      (UserStates.second_scale_end, '', None))
 
 
 class UserScale:
@@ -86,9 +92,29 @@ class UserScale:
         self.current_state += 1
         return self.scale_states[self.current_state - 1]
 
+    def current(self):
+        return self.scale_states[self.current_state]
+
+    def prev(self):
+        return self.scale_states[self.current_state - 1]
+
 
 users_scale = {}
 users_data = {}
+
+
+def next_state(id, state, text, keyboard):
+    if state == UserStates.first_scale_end:
+        bot.send_message(id, text='Конец первой шкалы', reply_markup=keyboard)
+    elif state == UserStates.second_scale_end:
+        bot.send_message(id, text='Конец второй шкалы', reply_markup=keyboard)
+    else:
+        bot.send_message(id, text=text, reply_markup=keyboard)
+
+    if state == UserStates.first_scale_end or state == UserStates.second_scale_end:
+        users_scale.pop(id)
+        users_data.pop(id)
+        bot.delete_state(id, id)
 
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -118,6 +144,9 @@ def new_bleeding(call):
 
 @bot.callback_query_handler(func=lambda call: call.data in ('CAD_NORM', 'CAD_1', 'CAD_2', 'CAD_3'))
 def cad_query(call):
+    if users_scale[call.message.chat.id].prev()[0] != UserStates.systolic_blood_pressure:
+        return
+
     if call.data == 'CAD_NORM':
         users_data[call.message.chat.id].systolic_blood_pressure = 0
     elif call.data == 'CAD_1':
@@ -129,10 +158,14 @@ def cad_query(call):
 
     state, text, keyboard = users_scale[call.message.chat.id].next()
     bot.set_state(call.message.chat.id, state, call.message.chat.id)
-    bot.send_message(call.message.chat.id, text=text, reply_markup=keyboard)
+
+    next_state(call.message.chat.id, state, text, keyboard)
 
 @bot.callback_query_handler(func=lambda call: call.data in ('HR_NORM', 'HR_1', 'HR_2', 'HR_3'))
 def hr_query(call):
+    if users_scale[call.message.chat.id].prev()[0] != UserStates.heart_rate:
+        return
+
     if call.data == 'HR_NORM':
         users_data[call.message.chat.id].heart_rate = 0
     elif call.data == 'HR_1':
@@ -144,10 +177,14 @@ def hr_query(call):
 
     state, text, keyboard = users_scale[call.message.chat.id].next()
     bot.set_state(call.message.chat.id, state, call.message.chat.id)
-    bot.send_message(call.message.chat.id, text=text, reply_markup=keyboard)
+
+    next_state(call.message.chat.id, state, text, keyboard)
 
 @bot.callback_query_handler(func=lambda call: call.data in ('BR_1', 'BR_2', 'BR_3'))
 def br_query(call):
+    if users_scale[call.message.chat.id].prev()[0] != UserStates.respiratory_rate:
+        return
+
     if call.data == 'BR_1':
         users_data[call.message.chat.id].respiratory_rate = 1
     elif call.data == 'BR_2':
@@ -157,10 +194,14 @@ def br_query(call):
 
     state, text, keyboard = users_scale[call.message.chat.id].next()
     bot.set_state(call.message.chat.id, state, call.message.chat.id)
-    bot.send_message(call.message.chat.id, text=text, reply_markup=keyboard)
+
+    next_state(call.message.chat.id, state, text, keyboard)
 
 @bot.callback_query_handler(func=lambda call: call.data in ('DIURES_NORM', 'DIURES_1', 'DIURES_2', 'DIURES_3'))
 def diures_query(call):
+    if users_scale[call.message.chat.id].prev()[0] != UserStates.diuresis:
+        return
+
     if call.data == 'DIURES_NORM':
         users_data[call.message.chat.id].diures = 0
     elif call.data == 'DIURES_1':
@@ -172,10 +213,14 @@ def diures_query(call):
 
     state, text, keyboard = users_scale[call.message.chat.id].next()
     bot.set_state(call.message.chat.id, state, call.message.chat.id)
-    bot.send_message(call.message.chat.id, text=text, reply_markup=keyboard)
+
+    next_state(call.message.chat.id, state, text, keyboard)
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
+    if call.message.chat.id in users_scale.keys():
+        return
+
     if call.data == "first_scale":
         users_scale[call.message.chat.id] = UserScale(FIRST_SCALE_STATES)
     elif call.data == "second_scale":
@@ -183,7 +228,8 @@ def callback_query(call):
 
     state, text, keyboard = users_scale[call.message.chat.id].next()
     bot.set_state(call.message.chat.id, state, call.message.chat.id)
-    bot.send_message(call.message.chat.id, text=text)
+
+    next_state(call.message.chat.id, state, text, keyboard)
 
 # Any state
 @bot.message_handler(state="*", commands=['cancel'])
@@ -199,7 +245,8 @@ def ask_body_mass(message):
     state, text, keyboard = users_scale[message.chat.id].next()
 
     bot.set_state(message.chat.id, state, message.chat.id)
-    bot.send_message(message.chat.id, text=text)
+
+    next_state(message.chat.id, state, text, keyboard)
 
     with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
         users_data[message.chat.id].body_mass_index = message.text
@@ -210,7 +257,8 @@ def ask_body_height(message):
     state, text, keyboard = users_scale[message.chat.id].next()
 
     bot.set_state(message.chat.id, state, message.chat.id)
-    bot.send_message(message.chat.id, text=text, reply_markup=keyboard)
+
+    next_state(message.chat.id, state, text, keyboard)
 
     with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
         users_data[message.chat.id].body_height = message.text
