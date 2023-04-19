@@ -15,6 +15,8 @@ bot = telebot.TeleBot(API_TOKEN, state_storage=state_storage)
 # TODO сделать вывод результата как ему надо
 # TODO либо подсветку кнопок, либо то, что он выбрал
 # TODO расставить комментарии и оюъяснить реюяьвфытлвтфыэзофТВД, ЙОЫВЬохМЫВдМОЫВ М ЫБ л=-
+# TODO объединить данные стейтов и введенные данные
+# TODO предусмотреть очистку данных
 
 class UserStates(StatesGroup):
     body_mass = State()
